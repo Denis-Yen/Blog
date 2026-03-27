@@ -13,27 +13,38 @@ library(grid)
 pob_dist <- read.xlsx("data/pob_dist_24.xlsx")
 db_tbc_dist <- read.xlsx("data/tbc.xlsx") 
 
-## Archivos shapefile de distritos
-shp_dist <- st_read("data/DISTRITOS/DISTRITOS_inei_geogpsperu_suyopomalia.shp")|> 
+## Archivos shapefile de departamentos
+shp_dep<- st_read("data/DEPARTAMENTOS/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp")|> 
   dplyr::select(
-  UBIGEO, NOMBDEP, NOMBPROV, geometry
+   CCDD, NOMBDEP, geometry
 )
 
 # 2. MANIPULACIÓN DE DATOS ---------------------------------------------------
-## Uniendo la base de datos de tuberculosis con la de población  nivel distrito:
+## Uniendo la base de datos de tuberculosis con la de población  nivel departamentos:
   
 db_tbc_dist_join <- db_tbc_dist |> 
   left_join( pob_dist, by = c("Ubigeo" = "UBIGEO"))
 
-## Unir datos de casos de tuberculosis al shapefile de distritos
-shp_dist_tbc <- shp_dist |> left_join(db_tbc_dist_join, by = c("UBIGEO"="Ubigeo")) |> 
-  mutate(
-    Tasa_incidencia = (Incidencia_A/POBLACION_24)*100000
-  )
+# Agregamos a nivel de departamentos
 
+db_tbc_dep <- db_tbc_dist_join |> 
+  mutate(
+  Ubigeo_dep = substring(Ubigeo,first = 1, last = 2)) |>
+    group_by(Ubigeo_dep, Departamento) |> 
+    summarise(
+      Poblacion = sum(POBLACION_24),
+      Morbilidad = sum(Morbilidad),
+      Incidencia_A = sum(Incidencia_A),
+      Incidencia_B = sum(Incidencia_B),
+      Tasa_morbilidad = (Morbilidad/Poblacion)*100000,
+      Tasa_incidencia = (Incidencia_A/Poblacion)*100000
+    )
+
+## Unir datos de casos de tuberculosis al shapefile de departamentos
+shp_dep_tbc <- shp_dep |> left_join(db_tbc_dep, by = c("CCDD"="Ubigeo_dep"))
  
 # Clasificación de varibale Tasa de incidencia
-jenks <- classIntervals(shp_dist_tbc$Tasa_incidencia, n = 5, style = "jenks")
+jenks <- classIntervals(shp_dep_tbc$Tasa_incidencia, n = 5, style = "jenks")
 
 # Crear etiquetas automáticas con rangos boxjenks o cortes naturales
 etiquetas <- paste0(
@@ -42,8 +53,8 @@ etiquetas <- paste0(
   round(jenks$brks[-1], 1)
 )
 
-shp_dist_tbc$clase_inc_tbc <- cut(
-  shp_dist_tbc$Tasa_incidencia,
+shp_dep_tbc$clase_inc_tbc <- cut(
+  shp_dep_tbc$Tasa_incidencia,
   breaks = jenks$brks,
   include.lowest = TRUE,
   labels = etiquetas
@@ -51,24 +62,24 @@ shp_dist_tbc$clase_inc_tbc <- cut(
 
 # Asignar colores específicos a cada categoría
 colores_categorias <- c(
-  "0–74.9"        = "#fcd8da",
-  "74.9–206.8"    = "#f8b1b5",
-  "206.8–643.1"   = "#f58b8f",
-  "643.1–1700.8"  = "#f1646a",
-  "1700.8–2694.9" = "#ee3d45"
+  "26.5–49.3"   = "#fcd8da",
+  "49.3–79.6"   = "#f8b1b5",
+  "79.6–136"    = "#f58b8f",
+  "136–168.1"   = "#f1646a",
+  "168.1–221.1" = "#ee3d45"
 )
 
 #centroides
 # tbc
-cents <- shp_dist_tbc |> 
-  st_make_valid() |> 
-  filter(!is.na(Tasa_incidencia)) |> 
-  st_point_on_surface() |> 
-  as_Spatial() |> 
+cents <- shp_dep_tbc %>%
+  st_make_valid() %>%
+  filter(!is.na(Tasa_incidencia)) %>%
+  st_point_on_surface() %>%
+  as_Spatial() %>%
   as.data.frame()
 
-# 3. MAPA DE INCIDENCIA DE LA TUBERCULOSIS DISTRITAL -----------------------------
-shp_dist_tbc|>  
+# 3. MAPA DE INCIDENCIA DE LA TUBERCULOSIS DEPARTAMENTAL ---------------------------------
+shp_dep_tbc|>  
   ggplot() + 
   geom_sf(aes(fill = factor(clase_inc_tbc)), color = "white", size = 0.0) +
   scale_fill_manual(
@@ -89,13 +100,13 @@ shp_dist_tbc|>
   reverse = F,
   label.position = "right"
 ))+ 
- # geom_text(
- # data = cents |> filter(Tasa_incidencia >= 240), aes(coords.x1, coords.x2, label = paste0(NOMBPROV, "\n", round(Tasa_incidencia, 1))
- # ),
- # size = 3,
- # fontface = "bold",
- # color = "#000000",
- # family = "georg") +
+  geom_text(
+  data = cents |> filter(Tasa_incidencia >= 168), aes(coords.x1, coords.x2, label = paste0(NOMBDEP, "\n", round(Tasa_incidencia, 1))
+  ),
+  size = 3,
+  fontface = "bold",
+  color = "#000000",
+  family = "georg") +
   theme(
     panel.background = element_blank(), 
     legend.background = element_blank(),
@@ -115,7 +126,6 @@ shp_dist_tbc|>
     axis.ticks = element_blank(),
     axis.text.x = element_blank(),
     axis.text.y = element_blank()) +
-  labs(x ="") -> map_niv_dist
+  labs(x ="") -> map_niv_dep
 
-ggsave(plot = map_niv_dist, "imagenes/map_tbc_niv_dist.png", width = 2500, height = 2000, units = "px")
-
+ggsave(plot = map_niv_dep, "imagenes/map_tbc_niv_dep.png", width = 2500, height = 2000, units = "px")

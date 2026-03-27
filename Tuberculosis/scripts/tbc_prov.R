@@ -8,48 +8,50 @@ library(classInt)
 library(grid)
 
 
-# CARGA DE DATOS --------------------------------------------------------
+# 1. CARGA DE DATOS --------------------------------------------------------
+## Bases de datos de poblacion y tuberculosis a nivel distrital:
+pob_dist <- read.xlsx("data/pob_dist_24.xlsx")
+db_tbc_dist <- read.xlsx("data/tbc.xlsx") 
+
 ## Archivos shapefile de provincias
-shp_prov<- st_read("data/PROVINCIAS/PROVINCIAS_inei_geogpsperu_suyopomalia.shp") |> 
+shp_prov<- st_read("data/PROVINCIAS/PROVINCIAS_inei_geogpsperu_suyopomalia.shp")|> 
   dplyr::select(
   IDPROV, NOMBDEP, NOMBPROV, geometry
 )
 
-## Bases de datos de tuberculosis a nivel provincia:
-pob_prov <- read.xlsx("data/pob_prov_24.xlsx") |> mutate(
- Id_prov = substring(UBIGEO,first = 1, last = 4)
-) |> group_by(UBIGEO, DEPARTAMENTO, PROVINCIA) |> 
-  summarise(
-    Poblacion = sum(TOTAL)
-  )
+# 2. MANIPULACIÓN DE DATOS ---------------------------------------------------
+## Uniendo la base de datos de tuberculosis con la de población  nivel distrito:
+  
+db_tbc_dist_join <- db_tbc_dist |> 
+  left_join( pob_dist, by = c("Ubigeo" = "UBIGEO"))
 
-db_tbc_prov <- read.xlsx("data/tbc.xlsx")|> mutate(
-  Id_prov = substring(Ubigeo,first = 1, last = 4)
-) left_join(pob_prov, by = c("IDPROV", "UBIGEO"))
+# Agregamos a nivel de provincia
 
-|> group_by(Id_prov, Departamento, Provincia) |> 
-  summarise(
-    Poblacion = sum(Poblacion),
-    Morbilidad = sum(Morbilidad),
-    Incidencia_A = sum(Incidencia_A),
-    Incidencia_B = sum(Incidencia_B),
-    Tasa_incidencia = (Incidencia_A/Poblacion)*100000
-  )
+db_tbc_pro <- db_tbc_dist_join |> 
+  mutate(
+  Ubigeo_prov = substring(Ubigeo,first = 1, last = 4)) |>
+    group_by(Ubigeo_prov, Departamento, Provincia) |> 
+    summarise(
+      Poblacion = sum(POBLACION_24),
+      Morbilidad = sum(Morbilidad),
+      Incidencia_A = sum(Incidencia_A),
+      Incidencia_B = sum(Incidencia_B),
+      Tasa_morbilidad = (Morbilidad/Poblacion)*100000,
+      Tasa_incidencia = (Incidencia_A/Poblacion)*100000
+    )
 
-# MANIPULACIÓN DE DATOS ---------------------------------------------------
-
-# Unir datos de casos de tuberculosis al shapefile de provincias
-shp_prov_tbc <- shp_prov |> left_join(db_tbc_prov, by = c("IDPROV"="Id_prov")) 
+## Unir datos de casos de tuberculosis al shapefile de provincias
+shp_prov_tbc <- shp_prov |> left_join(db_tbc_pro, by = c("IDPROV"="Ubigeo_prov"))
+ 
 # Clasificación de varibale Tasa de incidencia
 jenks <- classIntervals(shp_prov_tbc$Tasa_incidencia, n = 5, style = "jenks")
 
-# Crear etiquetas automáticas con rangos boxjenks
+# Crear etiquetas automáticas con rangos boxjenks o cortes naturales
 etiquetas <- paste0(
   round(jenks$brks[-length(jenks$brks)], 1),
   "–",
   round(jenks$brks[-1], 1)
 )
-
 
 shp_prov_tbc$clase_inc_tbc <- cut(
   shp_prov_tbc$Tasa_incidencia,
@@ -59,16 +61,14 @@ shp_prov_tbc$clase_inc_tbc <- cut(
 )
 
 # Asignar colores específicos a cada categoría
-colores_categorias <- c("170.5–307.1" = "#ee3d45", "97.7–170.5" = "#f1646a", "58.4–97.7" = "#f58b8f", "31.9–58.4" = "#f8b1b5", "5.7–31.9" = "#fcd8da")
 colores_categorias <- c(
-  "5.7–31.9"   = "#fde0dd",
-  "31.9–58.4"  = "#fcbba1",
-  "58.4–97.7"  = "#fc9272",
-  "97.7–170.5" = "#fb6a4a",
-  "170.5–307.1"= "#cb181d"
+  "5.7–31.9"    = "#fcd8da",
+  "31.9–58.4"   = "#f8b1b5",
+  "58.4–97.7"   = "#f58b8f",
+  "97.7–170.5"  = "#f1646a",
+  "170.5–307.1" = "#ee3d45"
 )
 
-            
 #centroides
 # tbc
 cents <- shp_prov_tbc %>%
@@ -78,7 +78,7 @@ cents <- shp_prov_tbc %>%
   as_Spatial() %>%
   as.data.frame()
 
-# 1. MAPA DE INCIDENCIA DE LA TUBERCULOSIS ---------------------------------
+# 3. MAPA DE INCIDENCIA DE LA TUBERCULOSIS ---------------------------------
 shp_prov_tbc|>  
   ggplot() + 
   geom_sf(aes(fill = factor(clase_inc_tbc)), color = "white", size = 0.0) +
@@ -100,13 +100,13 @@ shp_prov_tbc|>
   reverse = F,
   label.position = "right"
 ))+ 
-  #geom_text(
-  #data = cents |> filter(Tasa_incidencia >= 170), aes(coords.x1, coords.x2, label = paste0(NOMBPROV, "\n", round(Tasa_incidencia, 1))
-  #),
-  #size = 3,
-  #fontface = "bold",
-  #color = "#dbd5d5ff",
-  #family = "georg") +
+  geom_text(
+  data = cents |> filter(Tasa_incidencia >= 240), aes(coords.x1, coords.x2, label = paste0(NOMBPROV, "\n", round(Tasa_incidencia, 1))
+  ),
+  size = 3,
+  fontface = "bold",
+  color = "#000000",
+  family = "georg") +
   theme(
     panel.background = element_blank(), 
     legend.background = element_blank(),
