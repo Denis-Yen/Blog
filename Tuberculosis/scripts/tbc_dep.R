@@ -87,7 +87,7 @@ shp_dep_tbc|>
     name = "Tasa de incidencia"
   ) +
   labs(
-    title = stringr::str_trim("Perú: Tasa de incidencias de la tuberculosis"),
+    title = stringr::str_trim("Perú: Tasa de incidencia de la tuberculosis"),
     subtitle = "(n = 32,950)",
     caption = "Fuente: MINSA. Tablero de datos estadísticos sobre tuberculosis (TB) en el Perú, 2024*.\nElaboración: Denis Rodríguez (www.denis-rodriguez.com)")+
   guides(fill=guide_legend(
@@ -129,3 +129,4 @@ shp_dep_tbc|>
   labs(x ="") -> map_niv_dep
 
 ggsave(plot = map_niv_dep, "imagenes/map_tbc_niv_dep.png", width = 2500, height = 2000, units = "px")
+
